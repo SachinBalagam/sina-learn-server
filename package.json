@@ -7,7 +7,7 @@
     "build": "prisma generate && nest build",
     "start": "nest start",
     "dev": "nest start --watch",
-    "start:prod": "NODE_OPTIONS=\"--max-old-space-size=256\" node dist/main",
+    "start:prod": "node --max-old-space-size=256 dist/src/main",
     "lint": "echo 'lint ok'",
     "clean": "rm -rf dist",
     "test": "jest --verbose",
