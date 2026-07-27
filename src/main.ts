@@ -62,6 +62,10 @@ async function bootstrap() {
     JSON.stringify(document, null, 2),
   );
 
+  app.get('/api/v1/health', (_req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   const port = process.env.PORT || 4000;
   await app.listen(port);
   console.log(`Sina Learn API running on port ${port}`);
