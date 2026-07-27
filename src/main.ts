@@ -62,7 +62,7 @@ async function bootstrap() {
     JSON.stringify(document, null, 2),
   );
 
-  app.get('/api/v1/health', (_req, res) => {
+  app.use('/api/v1/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
