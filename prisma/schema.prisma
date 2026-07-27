@@ -1,0 +1,629 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PLATFORM_SUPER_ADMIN
+  ORGANIZATION_OWNER
+  ORGANIZATION_ADMIN
+  TRAINER
+  TEACHING_ASSISTANT
+  LEARNER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELED
+}
+
+enum LiveSessionStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  RAZORPAY
+  STRIPE
+}
+
+model Organization {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String   @unique
+  logoUrl         String?
+  domain          String?
+  isActive        Boolean  @default(true)
+  ownerId         String?  @db.Uuid
+  owner           User?    @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  maxUsers        Int      @default(50)
+  maxStorageGb    Int      @default(10)
+  settings        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  users              User[]
+  courses            Course[]
+  categories         Category[]
+  certificates       Certificate[]
+  invitations        Invitation[]
+  media              Media[]
+  notifications      Notification[]
+  notificationPreferences NotificationPreference[]
+  payments           Payment[]
+  mailTemplates      MailTemplate[]
+  subscription       Subscription? @relation("OrgSubscription")
+  completedLessons    CompletedLesson[]
+  roles              Role[]
+  liveSessions        LiveSession[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String   @id @default(uuid()) @db.Uuid
+  email          String   @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  avatarUrl      String?
+  role           UserRole @default(LEARNER)
+  roles          Role[]   @relation("UserRoles")
+  isActive       Boolean  @default(true)
+  organizationId String?  @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  lastLoginAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  ownedOrganizations     Organization[]   @relation("OrganizationOwner")
+  refreshTokens          RefreshToken[]
+  passwordResetTokens    PasswordResetToken[]
+  createdCourses         Course[]         @relation("CourseCreator")
+  enrollments            Enrollment[]
+  courseInstructors      CourseInstructor[]
+  attendanceRecords      Attendance[]
+  quizAttempts           QuizAttempt[]
+  completedLessons       CompletedLesson[]
+  certificates           Certificate[]
+  notificationReads      NotificationRead[]
+  notificationPreferences NotificationPreference[]
+  sentInvitations        Invitation[]
+  mediaUploads           Media[]            @relation("MediaUploader")
+  payments               Payment[]
+  liveSessions           LiveSession[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  token     String   @unique
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  token     String   @unique
+  email     String
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+model Category {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String
+  description    String?
+  organizationId String   @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  parentId       String?  @db.Uuid
+  parent         Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children       Category[] @relation("CategoryHierarchy")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  courses Course[]
+
+  @@map("categories")
+}
+
+model Course {
+  id             String       @id @default(uuid()) @db.Uuid
+  title          String
+  slug           String?
+  description    String?
+  thumbnailUrl   String?
+  price          Int?         @default(0)
+  currency       String?      @default("INR")
+  status         CourseStatus @default(DRAFT)
+  categoryId     String?      @db.Uuid
+  category       Category?    @relation(fields: [categoryId], references: [id])
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdById    String       @db.Uuid
+  createdBy      User         @relation("CourseCreator", fields: [createdById], references: [id])
+  estimatedDuration Int?
+  isPublished    Boolean      @default(false)
+  publishedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  certificateTemplateUrl String?
+
+  modules     CourseModule[]
+  lessons     Lesson[]     @relation("LessonCourse")
+  completedLessons CompletedLesson[] @relation("CompletedLessonCourse")
+  certificates     Certificate[]     @relation("CertificateCourse")
+  instructors CourseInstructor[]
+  enrollments Enrollment[]
+  payments    Payment[]
+  liveSessions LiveSession[]
+
+  @@map("courses")
+}
+
+model CourseModule {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String
+  sortOrder Int      @default(0)
+  courseId   String   @db.Uuid
+  course    Course   @relation(fields: [courseId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lessons Lesson[]
+
+  @@map("course_modules")
+}
+
+model Lesson {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  description String?
+  type        String   @default("video")
+  content     Json?
+  sortOrder   Int      @default(0)
+  duration    Int?
+  moduleId    String   @db.Uuid
+  module      CourseModule @relation(fields: [moduleId], references: [id])
+  courseId    String   @db.Uuid
+  course      Course   @relation("LessonCourse", fields: [courseId], references: [id])
+  isFree      Boolean  @default(false)
+  media       Media[]
+  completedBy CompletedLesson[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@map("lessons")
+}
+
+model CourseInstructor {
+  courseId   String @db.Uuid
+  course     Course @relation(fields: [courseId], references: [id])
+  userId     String @db.Uuid
+  user       User   @relation(fields: [userId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@id([courseId, userId])
+  @@map("course_instructors")
+}
+
+model Enrollment {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  courseId   String   @db.Uuid
+  course    Course   @relation(fields: [courseId], references: [id])
+  progress  Float    @default(0)
+  completed Boolean  @default(false)
+  completedAt DateTime?
+  enrolledAt DateTime @default(now())
+
+  @@unique([userId, courseId])
+  @@map("enrollments")
+}
+
+model CompletedLesson {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  user           User     @relation(fields: [userId], references: [id])
+  lessonId       String   @db.Uuid
+  lesson         Lesson   @relation(fields: [lessonId], references: [id])
+  courseId       String   @db.Uuid
+  course         Course   @relation("CompletedLessonCourse", fields: [courseId], references: [id])
+  organizationId String   @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  completedAt    DateTime @default(now())
+
+  @@unique([userId, lessonId])
+  @@map("completed_lessons")
+}
+
+model Media {
+  id              String      @id @default(uuid()) @db.Uuid
+  originalName    String
+  fileName        String
+  mimeType        String
+  size            Int
+  provider        String      @default("local")
+  providerKey     String?
+  playbackId      String?
+  thumbnailUrl    String?
+  duration        Float?
+  width           Int?
+  height          Int?
+  status          MediaStatus @default(UPLOADING)
+  organizationId  String      @db.Uuid
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  uploadedById    String      @db.Uuid
+  uploadedBy      User        @relation("MediaUploader", fields: [uploadedById], references: [id])
+  lessonId        String?     @db.Uuid
+  lesson          Lesson?     @relation(fields: [lessonId], references: [id])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  @@map("media")
+}
+
+model Quiz {
+  id            String     @id @default(uuid()) @db.Uuid
+  title         String
+  description   String?
+  status        QuizStatus @default(DRAFT)
+  timeLimit     Int?
+  passingScore  Int        @default(70)
+  maxAttempts   Int        @default(3)
+  lessonId      String?    @db.Uuid
+  courseId       String     @db.Uuid
+  organizationId String     @db.Uuid
+  createdById   String     @db.Uuid
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id        String  @id @default(uuid()) @db.Uuid
+  quizId    String  @db.Uuid
+  quiz      Quiz    @relation(fields: [quizId], references: [id])
+  type      String  @default("multiple_choice")
+  question  String
+  options   Json
+  correctAnswer String?
+  points    Int     @default(1)
+  sortOrder Int     @default(0)
+
+  @@map("quiz_questions")
+}
+
+model QuizAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  quizId    String   @db.Uuid
+  quiz      Quiz     @relation(fields: [quizId], references: [id])
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  answers   Json?
+  score     Int?
+  passed    Boolean?
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+
+  @@map("quiz_attempts")
+}
+
+model Certificate {
+  id             String   @id @default(uuid()) @db.Uuid
+  title          String
+  description    String?
+  templateUrl    String?
+  organizationId String   @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  courseId       String?  @db.Uuid
+  course         Course?  @relation("CertificateCourse", fields: [courseId], references: [id])
+  userId         String?  @db.Uuid
+  user           User?    @relation(fields: [userId], references: [id])
+  issuedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  @@map("certificates")
+}
+
+model Meeting {
+  id            String         @id @default(uuid()) @db.Uuid
+  title         String
+  description   String?
+  provider      String         @default("google_meet")
+  providerMeetingId String?
+  joinUrl       String?
+  startTime     DateTime
+  endTime       DateTime?
+  status        MeetingStatus  @default(SCHEDULED)
+  recordingUrl  String?
+  organizationId String         @db.Uuid
+  createdById   String         @db.Uuid
+  courseId       String?        @db.Uuid
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("meetings")
+}
+
+model Attendance {
+  id        String   @id @default(uuid()) @db.Uuid
+  meetingId String   @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+  duration  Int?
+
+  @@map("attendance")
+}
+
+model LiveSession {
+  id               String            @id @default(uuid()) @db.Uuid
+  title            String
+  description      String?
+  courseId         String?           @db.Uuid
+  course           Course?           @relation(fields: [courseId], references: [id])
+  provider         String?           @default("zoom")
+  providerMeetingId String?
+  startTime        DateTime
+  endTime          DateTime?
+  status           LiveSessionStatus @default(SCHEDULED)
+  joinUrl          String?
+  startUrl         String?
+  meetingPassword  String?
+  streamKey        String?
+  streamUrl        String?
+  playbackUrl      String?
+  hlsUrl           String?
+  recordingUrl     String?
+  organizationId   String            @db.Uuid
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  createdById      String            @db.Uuid
+  createdBy        User              @relation(fields: [createdById], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+
+  @@map("live_sessions")
+}
+
+model Payment {
+  id                String          @id @default(uuid()) @db.Uuid
+  organizationId    String          @db.Uuid
+  organization      Organization    @relation(fields: [organizationId], references: [id])
+  userId            String?         @db.Uuid
+  user              User?           @relation(fields: [userId], references: [id])
+  courseId           String?         @db.Uuid
+  course            Course?         @relation(fields: [courseId], references: [id])
+  enrollmentId      String?         @db.Uuid
+  amount            Int
+  currency          String          @default("INR")
+  status            PaymentStatus   @default(PENDING)
+  provider          PaymentProvider @default(RAZORPAY)
+  providerOrderId   String?
+  providerPaymentId String?
+  providerSignature String?
+  refundId          String?
+  refundAmount      Int?
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@map("payments")
+}
+
+model Subscription {
+  id              String              @id @default(uuid()) @db.Uuid
+  planId          String              @db.Uuid
+  organizationId  String              @unique @db.Uuid
+  status          SubscriptionStatus  @default(TRIALING)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialEndsAt     DateTime?
+  canceledAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  organization Organization @relation("OrgSubscription", fields: [organizationId], references: [id])
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model SubscriptionPlan {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  slug          String   @unique
+  description   String?
+  priceMonth    Int
+  priceYear     Int
+  maxUsers      Int
+  maxStorageGb  Int
+  features      Json?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model Notification {
+  id             String   @id @default(uuid()) @db.Uuid
+  type           String
+  title          String
+  body           String?
+  data           Json?
+  actorId        String?  @db.Uuid
+  actionUrl      String?
+  organizationId String   @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  userId         String?  @db.Uuid
+  createdAt      DateTime @default(now())
+
+  reads NotificationRead[]
+
+  @@map("notifications")
+}
+
+model NotificationRead {
+  id             String   @id @default(uuid()) @db.Uuid
+  notificationId String   @db.Uuid
+  notification   Notification @relation(fields: [notificationId], references: [id])
+  userId         String   @db.Uuid
+  user           User     @relation(fields: [userId], references: [id])
+  readAt         DateTime @default(now())
+
+  @@unique([notificationId, userId])
+  @@map("notification_reads")
+}
+
+model NotificationPreference {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+  organizationId String @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  type   String
+  email  Boolean @default(true)
+  inApp  Boolean @default(true)
+  push   Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, type])
+  @@map("notification_preferences")
+}
+
+model Invitation {
+  id              String   @id @default(uuid()) @db.Uuid
+  email           String
+  role            UserRole @default(LEARNER)
+  token           String   @unique
+  organizationId  String   @db.Uuid
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  invitedById     String   @db.Uuid
+  invitedBy       User     @relation(fields: [invitedById], references: [id])
+  acceptedAt      DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("invitations")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  action     String
+  entity     String
+  entityId   String?
+  userId     String?
+  tenantId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+model MailTemplate {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  key            String       // e.g. "lms_welcome", "hrms_clockin", "billing_invoice"
+  subject        String
+  htmlBody       String       @db.Text
+  isEnabled      Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, key])
+  @@map("mail_templates")
+}
+
+
+model Role {
+  id             String       @id @default(uuid()) @db.Uuid
+  name           String
+  description    String?
+  permissions    String[]
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  users                    User[]       @relation("UserRoles")
+  createdAt                DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([name, organizationId])
+  @@map("roles")
+}
